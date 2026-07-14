@@ -54,22 +54,22 @@ enum RadioGarden {
 
     // MARK: - Places (map dots)
 
-    private static var cachedPlaces: [Place] = []
+    /// The on-disk places cache, kept next to `stations.json`. The decoded
+    /// payload is held in memory by `SettingsModel` (so it can be released
+    /// when the settings window closes) rather than as a process-lifetime
+    /// static here.
+    static let placesCacheURL = Stations.fileURL.deletingLastPathComponent()
+        .appendingPathComponent("places-cache.json")
 
-    /// All ~12k Radio Garden places. Fetched once per launch and cached on
-    /// disk for a week (the payload is ~1.8 MB).
+    /// All ~12k Radio Garden places. Reads the on-disk cache if it is less
+    /// than a week old, otherwise fetches and caches the payload (~1.8 MB).
     static func places() async throws -> [Place] {
-        if !cachedPlaces.isEmpty { return cachedPlaces }
-
-        let cacheURL = Stations.fileURL.deletingLastPathComponent()
-            .appendingPathComponent("places-cache.json")
-        if let attributes = try? FileManager.default.attributesOfItem(atPath: cacheURL.path),
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: placesCacheURL.path),
            let modified = attributes[.modificationDate] as? Date,
            Date().timeIntervalSince(modified) < 7 * 24 * 3600,
-           let data = try? Data(contentsOf: cacheURL),
+           let data = try? Data(contentsOf: placesCacheURL),
            let places = try? JSONDecoder().decode([Place].self, from: data),
            !places.isEmpty {
-            cachedPlaces = places
             return places
         }
 
@@ -80,11 +80,10 @@ enum RadioGarden {
             return Place(id: raw.id, title: raw.title, country: raw.country,
                          latitude: raw.geo[1], longitude: raw.geo[0], size: raw.size ?? 1)
         }
-        cachedPlaces = places
         if let encoded = try? JSONEncoder().encode(places) {
-            try? FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(),
+            try? FileManager.default.createDirectory(at: placesCacheURL.deletingLastPathComponent(),
                                                      withIntermediateDirectories: true)
-            try? encoded.write(to: cacheURL)
+            try? encoded.write(to: placesCacheURL)
         }
         return places
     }

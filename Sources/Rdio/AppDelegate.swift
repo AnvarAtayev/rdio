@@ -7,20 +7,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
-    private var stateItem: NSMenuItem!
-    private var trackItem: NSMenuItem!
-    private var infoSeparator: NSMenuItem!
+    private var infoItem: NSMenuItem!
     private var stationItems: [NSMenuItem] = []
     private var transportView: TransportMenuView!
 
     private var animator: WaveformIconAnimator!
     private var staticIcon: NSImage? {
-        // Pin the symbol to a point size matched to the menu bar. Without a
-        // configuration SF Symbols render at intrinsic size and carry their
-        // text-baseline padding, so the button centers the bounding box rather
-        // than the visible glyph — which makes the icon look vertically off.
-        NSImage(systemSymbolName: IdleIcon.current, accessibilityDescription: "Rdio")?
-            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+        // A status button lays out an SF Symbol image by the symbol's text
+        // metrics rather than centering it, so symbols carrying a tall box —
+        // "radio" worst of them — sit visibly high in the menu bar. Drawing the
+        // symbol into a plain template image drops those metrics, and the button
+        // then centers it like it already centers the animated waveform.
+        guard let symbol = NSImage(systemSymbolName: IdleIcon.current, accessibilityDescription: "Rdio")?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular)) else { return nil }
+        let icon = NSImage(size: symbol.size, flipped: false) { rect in
+            symbol.draw(in: rect)
+            return true
+        }
+        icon.isTemplate = true
+        return icon
     }
 
     private let settingsModel = SettingsModel()
@@ -30,17 +35,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         settingsModel.onIconSettingsChanged = { [weak self] in
             guard let self else { return }
-            self.player.setSpectrumBarCount(IconStyle.barCount)
+            let barCount = IconStyle.barCount
+            self.player.setSpectrumBarCount(barCount)
+            self.animator.updateSettings()
             self.refreshUI()
         }
         settingsModel.togglePlayPauseHandler = { [weak self] in
             self?.togglePlayPause()
+        }
+        settingsModel.nextStationHandler = { [weak self] in
+            self?.playAdjacent(1)
         }
         return SettingsWindowController(model: settingsModel)
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         stations = Stations.load()
+        installEditMenu()
 
         UserDefaults.standard.register(defaults: [
             IconStyle.styleKey: IconStyle.spectrum.rawValue,
@@ -48,7 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             IconStyle.nowPlayingTextKey: true,
             IdleIcon.key: IdleIcon.defaultSymbol,
             UpdateChecker.autoCheckKey: true,
+            AppAppearance.key: AppAppearance.system.rawValue,
         ])
+        AppAppearance.current.apply()
         player.setSpectrumBarCount(IconStyle.barCount)
         player.onNextStation = { [weak self] in self?.playAdjacent(1) }
         player.onPreviousStation = { [weak self] in self?.playAdjacent(-1) }
@@ -63,7 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         transportView = TransportMenuView(target: self,
                                           previous: #selector(playPrevious),
                                           playPause: #selector(togglePlayPause),
-                                          next: #selector(playNext))
+                                          next: #selector(playNext),
+                                          shuffle: #selector(surpriseMe))
         menu.autoenablesItems = false
         menu.delegate = self
         statusItem.menu = menu
@@ -79,18 +93,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// An accessory app starts with no main menu, and the standard text-editing
+    /// key equivalents live on the menu rather than in the fields themselves — so
+    /// without this, ⌘Z/⌘X/⌘C/⌘V/⌘A do nothing while renaming a station. The menu
+    /// bar itself stays hidden; only the shortcuts come along.
+    private func installEditMenu() {
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        let editItem = NSMenuItem()
+        editItem.submenu = edit
+        let main = NSMenu()
+        main.addItem(editItem)
+        NSApp.mainMenu = main
+    }
+
     // MARK: - Menu
 
     private func rebuildMenu() {
         menu.removeAllItems()
 
-        stateItem = addInfoItem("")
-        stateItem.isHidden = true
-        trackItem = addInfoItem("")
-        trackItem.isHidden = true
+        // Give the row back its narrow canvas: a previous display stretched it to
+        // the menu's width, and a view that wide would floor the menu there —
+        // widening it a little more on every rebuild.
+        transportView.setFrameSize(NSSize(width: MenuMetrics.transportWidth,
+                                          height: transportView.frame.height))
+        menu.minimumWidth = MenuMetrics.width
 
-        infoSeparator = .separator()
-        menu.addItem(infoSeparator)
+        infoItem = addInfoItem("")
+        menu.addItem(.separator())
 
         let transportItem = NSMenuItem()
         transportItem.view = transportView
@@ -100,9 +138,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         stationItems = stations.map { station in
             let item = NSMenuItem(
-                title: station.name, action: #selector(stationClicked(_:)), keyEquivalent: "")
+                title: fitted(station.name), action: #selector(stationClicked(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = station
+            item.image = MenuMetrics.iconGutter
             return item
         }
         stationItems.forEach { menu.addItem($0) }
@@ -112,8 +151,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let search = NSMenuItem(
             title: "Search...", action: #selector(openMapSearch), keyEquivalent: "")
         search.target = self
+        search.image = MenuMetrics.icon("magnifyingglass")
         menu.addItem(search)
 
+        // Settings and Quit are left to macOS, which recognises their actions and
+        // draws its own icon. Adding one here only gets it drawn beside that.
         let settings = NSMenuItem(
             title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
@@ -132,35 +174,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func addInfoItem(_ title: String) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
+        item.image = MenuMetrics.iconGutter
         menu.addItem(item)
         return item
     }
 
-    private func refreshUI() {
-        guard stateItem != nil else { return }
+    /// Clip `text` to the menu's text column, ellipsis and all. Measured in
+    /// points, not characters: the menu font is proportional, so a character
+    /// budget either wraps short of the edge or overruns it and widens the menu.
+    private func fitted(_ text: String) -> String {
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.menuFont(ofSize: 0)]
+        func width(_ string: String) -> CGFloat {
+            (string as NSString).size(withAttributes: attributes).width
+        }
+        guard width(text) > MenuMetrics.textWidth else { return text }
 
-        // Only surface status the transport buttons can't show themselves:
-        // connecting and errors. Stopped/playing are clear from the buttons,
-        // the checkmarked station, and the track line below.
+        var clipped = text
+        while !clipped.isEmpty, width(clipped + "…") > MenuMetrics.textWidth {
+            clipped.removeLast()
+        }
+        return clipped + "…"
+    }
+
+    private func refreshUI() {
+        guard infoItem != nil else { return }
+
+        // One line, always present, so the menu never changes height: what's on
+        // air, or why it isn't. Never hidden — hiding it would drop a row and
+        // resize the menu out from under the pointer.
         switch player.state {
         case .connecting(let station):
-            stateItem.title = "Connecting to \(station.name)…"
-            stateItem.isHidden = false
+            infoItem.title = fitted("Connecting to \(station.name)…")
         case .failed(let station):
-            stateItem.title = "Stream failed: \(station.name)"
-            stateItem.isHidden = false
-        case .stopped, .playing:
-            stateItem.isHidden = true
+            infoItem.title = fitted("Stream failed: \(station.name)")
+        case .playing(let station):
+            let track = player.trackTitle
+            infoItem.title = fitted(track?.isEmpty == false ? track! : station.name)
+        case .stopped:
+            infoItem.title = "Not playing"
         }
-
-        if player.isPlaying, let track = player.trackTitle, !track.isEmpty {
-            trackItem.title = track.count > 60 ? String(track.prefix(60)) + "…" : track
-            trackItem.isHidden = false
-        } else {
-            trackItem.isHidden = true
-        }
-
-        infoSeparator.isHidden = stateItem.isHidden && trackItem.isHidden
 
         transportView.update(isPlaying: player.isPlaying,
                              canPlay: player.currentStation != nil || !stations.isEmpty,
@@ -168,7 +220,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         for item in stationItems {
             guard let station = item.representedObject as? Station else { continue }
-            item.state = station == player.currentStation && player.isPlaying ? .on : .off
+            let isOnAir = station == player.currentStation && player.isPlaying
+            item.image = isOnAir ? MenuMetrics.icon("checkmark") : MenuMetrics.iconGutter
         }
 
         if case .playing(let station) = player.state {
@@ -190,6 +243,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         updateIconAnimation()
         settingsModel.isPlaying = player.isPlaying
+        settingsModel.nowPlayingStation = player.currentStation
+        settingsModel.nowPlayingTrack = player.trackTitle
     }
 
     private func updateIconAnimation() {
@@ -235,6 +290,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func playNext() {
         playAdjacent(1)
+    }
+
+    @objc private func surpriseMe() {
+        Task {
+            await settingsModel.loadPlacesIfNeeded()
+            await settingsModel.surpriseMe()
+        }
     }
 
     /// Steps through the saved station list, wrapping at the ends.

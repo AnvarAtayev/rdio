@@ -3,32 +3,54 @@ import SwiftUI
 
 /// Hosts the SwiftUI settings UI (full-height sidebar + detail) in a window
 /// styled like a standard macOS settings pane.
-final class SettingsWindowController: NSWindowController {
+///
+/// The window + hosting controller + SwiftUI tree are rebuilt on each `show`
+/// and torn down on `windowWillClose` so the ~1.8 MB places cache and the
+/// view tree are reclaimed when the window isn't needed. The `SettingsModel`
+/// (small until places load) persists across opens so playback state and
+/// editable stations survive a close-reopen.
+final class SettingsWindowController: NSObject {
     let model: SettingsModel
+    private var windowController: NSWindowController?
 
     init(model: SettingsModel) {
         self.model = model
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 880, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered, defer: false)
-        window.title = "Rdio Settings"
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isReleasedWhenClosed = false
-        window.contentViewController = NSHostingController(rootView: SettingsView(model: model))
-        super.init(window: window)
+        super.init()
     }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not used") }
-
+    @MainActor
     func show(tab: SettingsTab) {
         model.selectedTab = tab
         model.reloadStationsFromDisk()
-        if window?.isVisible != true { window?.center() }
+        if windowController == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 880, height: 620),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                backing: .buffered, defer: false)
+            window.title = "Rdio Settings"
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.isReleasedWhenClosed = false
+            window.contentViewController = NSHostingController(rootView: SettingsView(model: model))
+            window.delegate = self
+            window.center()
+            let controller = NSWindowController(window: window)
+            windowController = controller
+        }
         NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
+        windowController?.showWindow(nil)
+        windowController?.window?.makeKeyAndOrderFront(nil)
+        model.windowIsVisible = true
+    }
+}
+
+extension SettingsWindowController: NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            model.windowIsVisible = false
+            model.releaseMapCache()
+            windowController = nil
+        }
     }
 }
 
@@ -36,10 +58,16 @@ struct SettingsView: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
-        HStack(spacing: 0) {
-            Sidebar(model: model).frame(width: 200)
-            Divider()
-            detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                Sidebar(model: model).frame(width: 200)
+                Divider()
+                detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            if model.nowPlayingStation != nil {
+                Divider()
+                NowPlayingBar(model: model)
+            }
         }
         .frame(minWidth: 840, minHeight: 560)
         .ignoresSafeArea()
@@ -51,6 +79,48 @@ struct SettingsView: View {
         case .design: DesignPage(model: model)
         case .about: AboutPage(model: model)
         }
+    }
+}
+
+/// Bar across the foot of the window whenever a station is loaded: what's on
+/// air, transport, and a heart — the only way to keep a station that Surprise Me
+/// picked, since it never touched My Stations.
+private struct NowPlayingBar: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: model.isPlaying ? "dot.radiowaves.left.and.right" : "pause.circle")
+                .font(.system(size: 15))
+                .foregroundStyle(model.isPlaying ? Color.accentColor : Color.secondary)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.nowPlayingStation?.name ?? "")
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                Text(model.nowPlayingTrack ?? (model.isPlaying ? "Playing" : "Paused"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+
+            HoverButton(symbol: model.isNowPlayingFavorite ? "heart.fill" : "heart",
+                        help: model.isNowPlayingFavorite
+                            ? "Remove from My Stations" : "Add to My Stations") {
+                model.toggleFavoriteNowPlaying()
+            }
+            HoverButton(symbol: model.isPlaying ? "pause.fill" : "play.fill", help: "Play/Pause") {
+                model.togglePlayPauseHandler?()
+            }
+            HoverButton(symbol: "forward.fill", help: "Next station") {
+                model.nextStationHandler?()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.regularMaterial)
     }
 }
 
@@ -66,7 +136,7 @@ private struct Sidebar: View {
                 }
             }
             Spacer()
-            SidebarToolbar(model: model)
+            SidebarToolbar()
                 .padding(.bottom, 10)
         }
         .padding(.horizontal, 9)
@@ -75,19 +145,13 @@ private struct Sidebar: View {
     }
 }
 
-/// Bottom-of-sidebar utility strip, in the spirit of the Stats menu bar app:
-/// playback toggle on the left, bug/coffee/quit on the right.
+/// Bottom-of-sidebar utility strip: bug/coffee/quit. Playback lives in the
+/// now-playing bar across the foot of the window.
 private struct SidebarToolbar: View {
-    @ObservedObject var model: SettingsModel
     @State private var hovered: String?
 
     var body: some View {
         HStack(spacing: 2) {
-            button(symbol: model.isPlaying ? "pause.fill" : "play.fill",
-                   id: "play", help: "Play/Pause") {
-                model.togglePlayPauseHandler?()
-            }
-            Spacer()
             button(symbol: "ladybug", id: "bug", help: "Report a bug") {
                 NSWorkspace.shared.open(UpdateChecker.issuesURL)
             }
@@ -97,6 +161,7 @@ private struct SidebarToolbar: View {
             button(symbol: "power", id: "quit", help: "Quit Rdio") {
                 NSApp.terminate(nil)
             }
+            Spacer()
         }
     }
 
@@ -121,6 +186,7 @@ private struct SidebarRow: View {
     let tab: SettingsTab
     let isSelected: Bool
     let action: () -> Void
+    @State private var hovered = false
 
     var body: some View {
         Button(action: action) {
@@ -137,10 +203,12 @@ private struct SidebarRow: View {
             .padding(.horizontal, 7)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isSelected ? Color.accentColor : Color.clear))
+                    .fill(isSelected ? Color.accentColor
+                          : (hovered ? Color.primary.opacity(0.08) : Color.clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovered = $0 }
     }
 }
 
@@ -171,6 +239,15 @@ struct DesignPage: View {
     var body: some View {
         SettingsPage(title: "Design") {
             Form {
+                Section("Appearance") {
+                    Picker("Theme", selection: $model.appearance) {
+                        ForEach(AppAppearance.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
                 Section("Idle icon") {
                     HStack(spacing: 10) {
                         ForEach(IdleIcon.options) { option in
@@ -196,9 +273,7 @@ struct DesignPage: View {
                         .disabled(model.iconStyle == .off)
 
                     LabeledContent("Preview") { IconPreview(model: model) }
-                }
 
-                Section("Now playing") {
                     Toggle("Show track title in the menu bar", isOn: $model.showNowPlayingText)
                 }
             }
@@ -211,6 +286,7 @@ private struct IdleIconChip: View {
     let option: IdleIcon.Option
     let isSelected: Bool
     let action: () -> Void
+    @State private var hovered = false
 
     var body: some View {
         Button(action: action) {
@@ -219,39 +295,64 @@ private struct IdleIconChip: View {
                     .font(.system(size: 17))
                     .frame(width: 48, height: 36)
                     .background(RoundedRectangle(cornerRadius: 8)
-                        .fill(isSelected ? Color.accentColor.opacity(0.22) : Color.clear))
+                        .fill(isSelected ? Color.accentColor.opacity(0.22)
+                              : (hovered ? Color.primary.opacity(0.08) : Color.clear)))
                     .overlay(RoundedRectangle(cornerRadius: 8)
                         .strokeBorder(isSelected ? Color.accentColor : Color.secondary.opacity(0.3)))
                 Text(option.label)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            // the whole chip, box and caption alike, is the click target
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovered = $0 }
     }
 }
 
-/// A larger, always-dancing rendition of the icon so style changes are
-/// immediately visible even when nothing is playing.
+/// A rendition of the icon, holding a still frame until the pointer is over it,
+/// so a style can be previewed in motion without the preview redrawing the whole
+/// settings tree the rest of the time.
 struct IconPreview: View {
     @ObservedObject var model: SettingsModel
+    @State private var isHovering = false
+
+    /// The pattern at its widest — the 3...8 stepper's maximum. Held at all
+    /// times so the row doesn't resize as the bar count or style changes.
+    private static let width: CGFloat = 8 * 5 + 7 * 3
+    /// Matches the height of a stock control, so the preview's row is the same
+    /// height as the picker and stepper rows above it.
+    private static let height: CGFloat = 22
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1.0 / 15.0)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .center, spacing: 3) {
-                if model.iconStyle == .off {
-                    Image(systemName: model.idleIcon).font(.title2)
-                } else {
-                    ForEach(0..<model.barCount, id: \.self) { bar in
-                        Capsule()
-                            .frame(width: 5,
-                                   height: 6 + previewLevel(t: t, bar: bar, of: model.barCount) * 26)
-                    }
+        Group {
+            // windowIsVisible also covers closing the window (⌘W) while the
+            // pointer sits on the preview, which leaves no hover to exit.
+            if isHovering && model.windowIsVisible {
+                TimelineView(.periodic(from: .now, by: 1.0 / 15.0)) { context in
+                    bars(at: context.date.timeIntervalSinceReferenceDate)
+                }
+            } else {
+                bars(at: 0)
+            }
+        }
+        .onHover { isHovering = $0 }
+    }
+
+    @ViewBuilder private func bars(at t: Double) -> some View {
+        HStack(alignment: .center, spacing: 3) {
+            if model.iconStyle == .off {
+                Image(systemName: model.idleIcon).font(.system(size: 16))
+            } else {
+                ForEach(0..<model.barCount, id: \.self) { bar in
+                    Capsule()
+                        .frame(width: 5,
+                               height: 4 + previewLevel(t: t, bar: bar, of: model.barCount) * 16)
                 }
             }
-            .frame(height: 36)
         }
+        .frame(width: Self.width, height: Self.height)
     }
 
     private func previewLevel(t: Double, bar: Int, of count: Int) -> CGFloat {
@@ -311,7 +412,7 @@ struct AboutPage: View {
 
                 Section {
                     Link(destination: AppLinks.coffee) {
-                        Label("Buy me a coffee ☕️", systemImage: "cup.and.saucer")
+                        Label("Buy me a coffee", systemImage: "heart.fill")
                     }
                 }
             }

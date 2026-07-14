@@ -3,6 +3,10 @@ import Foundation
 struct Station: Codable, Equatable {
     let name: String
     let url: URL
+    var location: String? = nil
+    /// The name the station arrived with, kept so a rename can be undone.
+    /// Absent for hand-added stations and for files written before this existed.
+    var defaultName: String? = nil
 }
 
 enum Stations {
