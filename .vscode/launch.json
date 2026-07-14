@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:rdio}",
+            "name": "Debug Rdio",
+            "target": "Rdio",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Rdio"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:rdio}",
+            "name": "Release Rdio",
+            "target": "Rdio",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Rdio"
+        }
+    ]
+}
