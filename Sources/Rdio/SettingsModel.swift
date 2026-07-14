@@ -24,6 +24,12 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+/// External links surfaced by the app (About page, sidebar toolbar, etc.).
+/// Edit these in one place.
+enum AppLinks {
+    static let coffee = URL(string: "https://buymeacoffee.com/aatayev")!
+}
+
 /// Checks GitHub releases for a newer version. Point `repo` at the app's
 /// repository once it's published — until then checks report "no releases".
 enum UpdateChecker {
@@ -34,9 +40,14 @@ enum UpdateChecker {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
 
+    /// URL for filing issues, derived from `repo`.
+    static var issuesURL: URL {
+        URL(string: "https://github.com//AnvarAtayev/rdio/issues")!
+    }
+
     /// Latest published version tag, or nil when the repo has no releases.
     static func latestVersion() async throws -> String? {
-        let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
+        let url = URL(string: "https://api.github.com/repos//AnvarAtayev/rdio/releases/latest")!
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -132,6 +143,11 @@ final class SettingsModel: ObservableObject {
 
     var playHandler: ((Station) -> Void)?
     var onIconSettingsChanged: (() -> Void)?
+    /// Toggle playback from the settings window's sidebar toolbar.
+    var togglePlayPauseHandler: (() -> Void)?
+    /// Mirrors `RadioPlayer.isPlaying` so the sidebar's play/pause button
+    /// can reflect live state. Pushed from `AppDelegate.refreshUI`.
+    @Published var isPlaying = false
 
     private var saveTask: Task<Void, Never>?
 

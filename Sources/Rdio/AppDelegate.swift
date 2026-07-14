@@ -23,17 +23,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
     }
 
+    private let settingsModel = SettingsModel()
     private lazy var settingsController: SettingsWindowController = {
-        let model = SettingsModel()
-        model.playHandler = { [weak self] station in
+        settingsModel.playHandler = { [weak self] station in
             self?.player.play(station)
         }
-        model.onIconSettingsChanged = { [weak self] in
+        settingsModel.onIconSettingsChanged = { [weak self] in
             guard let self else { return }
             self.player.setSpectrumBarCount(IconStyle.barCount)
             self.refreshUI()
         }
-        return SettingsWindowController(model: model)
+        settingsModel.togglePlayPauseHandler = { [weak self] in
+            self?.togglePlayPause()
+        }
+        return SettingsWindowController(model: settingsModel)
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -186,6 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         updateIconAnimation()
+        settingsModel.isPlaying = player.isPlaying
     }
 
     private func updateIconAnimation() {

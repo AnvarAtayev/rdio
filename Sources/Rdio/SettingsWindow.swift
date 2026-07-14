@@ -66,10 +66,54 @@ private struct Sidebar: View {
                 }
             }
             Spacer()
+            SidebarToolbar(model: model)
+                .padding(.bottom, 10)
         }
         .padding(.horizontal, 9)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(.regularMaterial)
+    }
+}
+
+/// Bottom-of-sidebar utility strip, in the spirit of the Stats menu bar app:
+/// playback toggle on the left, bug/coffee/quit on the right.
+private struct SidebarToolbar: View {
+    @ObservedObject var model: SettingsModel
+    @State private var hovered: String?
+
+    var body: some View {
+        HStack(spacing: 2) {
+            button(symbol: model.isPlaying ? "pause.fill" : "play.fill",
+                   id: "play", help: "Play/Pause") {
+                model.togglePlayPauseHandler?()
+            }
+            Spacer()
+            button(symbol: "ladybug", id: "bug", help: "Report a bug") {
+                NSWorkspace.shared.open(UpdateChecker.issuesURL)
+            }
+            button(symbol: "heart.fill", id: "coffee", help: "Buy me a coffee") {
+                NSWorkspace.shared.open(AppLinks.coffee)
+            }
+            button(symbol: "power", id: "quit", help: "Quit Rdio") {
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    private func button(symbol: String, id: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13))
+                .frame(width: 26, height: 22)
+                .foregroundStyle(hovered == id ? Color.primary : Color.secondary)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(hovered == id ? Color.primary.opacity(0.1) : Color.clear))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 ? id : nil }
+        .help(help)
     }
 }
 
@@ -231,9 +275,6 @@ struct IconPreview: View {
 struct AboutPage: View {
     @ObservedObject var model: SettingsModel
 
-    /// Swap in your own page.
-    private let coffeeURL = URL(string: "https://www.buymeacoffee.com/anvar936")!
-
     var body: some View {
         SettingsPage(title: "About") {
             Form {
@@ -269,7 +310,7 @@ struct AboutPage: View {
                 }
 
                 Section {
-                    Link(destination: coffeeURL) {
+                    Link(destination: AppLinks.coffee) {
                         Label("Buy me a coffee ☕️", systemImage: "cup.and.saucer")
                     }
                 }
