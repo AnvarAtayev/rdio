@@ -1,52 +1,61 @@
-# Rdio
+<p align="center">
+  <img src="docs/img/app-icon.png" width="112" height="112" alt="Rdio app icon">
+</p>
 
-A tiny, fast, native macOS menu bar radio player. No Electron, no Python, no
-dependencies — a single small Swift + AVFoundation binary.
+<h1 align="center">Rdio</h1>
 
-## Features
+<p align="center">
+  A tiny, native macOS menu bar radio player.
+</p>
 
-- Lives in the menu bar (no Dock icon)
-- Simple dropdown with ⏮ ⏯ ⏭ transport buttons (previous/next steps through
-  your saved stations) and one-click station switching
-- **Settings window** (menu → Settings…, ⌘,) with a sidebar:
-  - **Stations** — Radio Garden world map of ~12k broadcasting cities (click
-    a dot to list its stations, search by name/city/genre, ▶ plays, ＋
-    favorites) plus your editable favorites list below
-  - **Design** — pick the idle menu bar icon (radio, antenna, waveform, …),
-    the playing animation (live spectrum / ripple / pulse / none) with 3–8
-    bars and a live preview, and whether the track title shows in the menu bar
-  - **About** — version, update check (GitHub releases), start at login,
-    Buy Me a Coffee link
-- Shows the current track title in the menu and (optionally) the menu bar
-- Media keys / Control Center integration, including next/previous station
-- Auto-reconnects after short network drops
-- Station list is a plain JSON file you can also edit by hand
+---
 
-## Build & install
-
-Requires macOS 14+ and Xcode (or the Command Line Tools).
+## Install
 
 ```sh
-make app      # builds Rdio.app in the repo root
+make app
 open Rdio.app
 ```
 
-Move `Rdio.app` to `/Applications` to keep it around, and add it in
-System Settings → General → Login Items to start it at login.
+Move `Rdio.app` to `/Applications` to keep it around. You'll need Xcode or the Command Line Tools.
 
-Dev loop:
+> Prefer `make app` over `make run`. The bundled `Info.plist` carries the App
+> Transport Security exception that `http://` streams need; the bare binary
+> `make run` builds doesn't have it.
 
-```sh
-make run       # run the bare binary from the terminal (Ctrl-C to quit)
-make selftest  # connect to every saved station muted, report PASS/FAIL
-```
+## The menu
 
-## Stations
+Everything lives behind the menu bar icon: play/pause, skip, shuffle, and
+one-click switching between your stations. The one on air is checked.
 
-On first launch Rdio seeds `~/Library/Application Support/Rdio/stations.json`
-with a few good defaults (SomaFM, Radio Paradise, FIP, KEXP). Edit them in
-Settings → Stations (or open the JSON from there); changes are picked up the
-next time the menu opens.
+<p align="center">
+  <img src="docs/img/menu.png" width="300" alt="Rdio menu bar dropdown">
+</p>
+
+Media keys and Control Center work too.
+
+## Find stations
+
+**Settings → Stations.** Search the Radio Garden map of ~12,000 broadcasting cities, browse the most popular stations, or hit shuffle to land somewhere random in the world. Keep the ones you like.
+
+<p align="center">
+  <img src="docs/img/settings-stations.png" width="720" alt="Settings — Stations tab">
+</p>
+
+## Make it yours
+
+**Settings → Design.** Choose the idle icon, and how the bars move while a
+station plays — spectrum, ripple, pulse, or nothing at all.
+
+<p align="center">
+  <img src="docs/img/settings-design.png" width="720" alt="Settings — Design tab">
+</p>
+
+**Settings → About** has the version, an update check, and a start-at-login toggle.
+
+## Stations file
+
+Your stations live in `~/Library/Application Support/Rdio/stations.json`, seeded on first launch with SomaFM, Radio Paradise, FIP, and KEXP. Edit them in Settings, or open the JSON directly:
 
 ```json
 [
@@ -54,18 +63,4 @@ next time the menu opens.
 ]
 ```
 
-Anything AVFoundation can play works as a `url`, including Radio Garden
-channel URLs (`https://radio.garden/api/ara/content/listen/<id>/channel.mp3`).
-
-## Notes
-
-- The Radio Garden API is unofficial and could change without notice. Saved
-  stations keep working regardless — searching is the only feature that
-  depends on it.
-- Some stations (often ones found via Radio Garden) stream over plain
-  `http://`. Those play in the bundled `Rdio.app` — its Info.plist carries the
-  App Transport Security exception for media — but not via `make run`.
-- The waveform icon shows a real FFT spectrum (five log-spaced bands,
-  ~40 Hz–16 kHz) on streams that expose an audio track to processing taps
-  (e.g. SomaFM); other streams get a synthesized-but-cute dance.
-  `make selftest` reports which is which, with per-band peaks.
+Anything AVFoundation can play works as a `url`, including Radio Garden channels (`https://radio.garden/api/ara/content/listen/<id>/channel.mp3`).
