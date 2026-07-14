@@ -15,7 +15,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var animator: WaveformIconAnimator!
     private var staticIcon: NSImage? {
-        NSImage(systemSymbolName: IdleIcon.current, accessibilityDescription: "Rdio")
+        // Pin the symbol to a point size matched to the menu bar. Without a
+        // configuration SF Symbols render at intrinsic size and carry their
+        // text-baseline padding, so the button centers the bounding box rather
+        // than the visible glyph — which makes the icon look vertically off.
+        NSImage(systemSymbolName: IdleIcon.current, accessibilityDescription: "Rdio")?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
     }
 
     private lazy var settingsController: SettingsWindowController = {
@@ -38,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             IconStyle.styleKey: IconStyle.spectrum.rawValue,
             IconStyle.barCountKey: 5,
             IconStyle.nowPlayingTextKey: true,
-            IdleIcon.key: IdleIcon.options[0].symbol,
+            IdleIcon.key: IdleIcon.defaultSymbol,
             UpdateChecker.autoCheckKey: true,
         ])
         player.setSpectrumBarCount(IconStyle.barCount)

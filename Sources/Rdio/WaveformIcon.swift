@@ -29,6 +29,10 @@ enum IdleIcon {
 
     static let key = "IdleIconSymbol"
 
+    /// SF Symbol used when the user has never picked one. Kept as a constant so
+    /// the registered default, SettingsModel fallback, and `current` all agree.
+    static let defaultSymbol = "radio"
+
     static let options: [Option] = [
         Option(symbol: "dot.radiowaves.left.and.right", label: "Waves"),
         Option(symbol: "radio", label: "Radio"),
@@ -39,7 +43,7 @@ enum IdleIcon {
     ]
 
     static var current: String {
-        UserDefaults.standard.string(forKey: key) ?? options[0].symbol
+        UserDefaults.standard.string(forKey: key) ?? defaultSymbol
     }
 }
 

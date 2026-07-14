@@ -139,7 +139,7 @@ final class SettingsModel: ObservableObject {
         let defaults = UserDefaults.standard
         iconStyle = IconStyle(rawValue: defaults.string(forKey: IconStyle.styleKey) ?? "") ?? .spectrum
         barCount = max(3, min(8, defaults.integer(forKey: IconStyle.barCountKey)))
-        idleIcon = defaults.string(forKey: IdleIcon.key) ?? IdleIcon.options[0].symbol
+        idleIcon = defaults.string(forKey: IdleIcon.key) ?? IdleIcon.defaultSymbol
         showNowPlayingText = defaults.bool(forKey: IconStyle.nowPlayingTextKey)
         autoUpdateCheck = defaults.bool(forKey: UpdateChecker.autoCheckKey)
         launchAtLogin = SMAppService.mainApp.status == .enabled
