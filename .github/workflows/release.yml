@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: swift build -c release
+
+      - name: Package
+        run: |
+          mkdir rdio
+          cp .build/release/rdio rdio/
+          tar -czf rdio-macos-arm64.tar.gz rdio
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: rdio-macos-arm64.tar.gz
