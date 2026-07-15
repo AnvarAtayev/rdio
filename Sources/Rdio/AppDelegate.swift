@@ -149,7 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         let search = NSMenuItem(
-            title: "Search...", action: #selector(openMapSearch), keyEquivalent: "")
+            title: "Search...", action: #selector(openSettings), keyEquivalent: "")
         search.target = self
         search.image = MenuMetrics.icon("magnifyingglass")
         menu.addItem(search)
@@ -313,10 +313,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openSettings() {
-        settingsController.show(tab: .stations)
-    }
-
-    @objc private func openMapSearch() {
         settingsController.show(tab: .stations)
     }
 }

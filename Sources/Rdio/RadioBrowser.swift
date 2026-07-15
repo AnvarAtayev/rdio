@@ -14,11 +14,7 @@ enum RadioBrowser {
     /// api.radio-browser.info points at a healthy server; we follow redirects.
     static func topStations(limit: Int = 100) async throws -> [Station] {
         let url = URL(string: "https://all.api.radio-browser.info/json/stations/topvote/\(limit)")!
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
-        let raw = try JSONDecoder().decode([Raw].self, from: data)
+        let raw = try await HTTP.decode([Raw].self, from: url)
         return raw.compactMap { item -> Station? in
             let urlString = (item.url_resolved?.isEmpty == false ? item.url_resolved : nil) ?? item.url
             guard let url = URL(string: urlString) else { return nil }

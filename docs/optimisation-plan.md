@@ -187,14 +187,22 @@ observation closure captured. Minor leak per pause-without-replay.
 
 ### 3. Consolidations / cleanliness
 
-**3.1 Two near-identical HTTP helpers**
-`RadioGarden.get` (`RadioGarden.swift:106`), inline fetch in
-`RadioBrowser.topStations` (`RadioBrowser.swift:17-20`), and in
-`UpdateChecker.latestVersion` (`SettingsModel.swift:103`). Three copies of
-"URLSession + 200-or-throw".
-Remedy: one `enum HTTP { static func get(_ url: URL) async throws -> Data;
-static func decode<T: Decodable>(_ url: URL, as: T.Type) async throws -> T }`.
-Removes ~25 lines.
+**3.1 Two near-identical HTTP helpers — DONE (2025-07-15)**
+
+`RadioGarden.get`, the inline fetch in `RadioBrowser.topStations`, and
+`UpdateChecker.latestVersion` were three copies of "URLSession + 200-or-throw".
+
+Fix: added `Sources/Rdio/HTTP.swift` — `enum HTTP` with `get(_ url:)`,
+`get(_ request:)` (for callers that set headers), and
+`decode<T: Decodable>(_:from:)` (GET + JSON-decode in one step). Non-200
+responses throw `HTTP.StatusError(code:)` so callers can match a specific
+status. RadioGarden's three calls and RadioBrowser's fetch collapse to
+`HTTP.decode(...)` one-liners; `RadioGarden`'s private `get` is deleted.
+`UpdateChecker.latestVersion` uses `HTTP.get(request)` (keeping its
+`Accept: application/vnd.github+json` header) and preserves its 404→nil
+"no releases yet" sentinel by catching `HTTP.StatusError` where `code == 404`.
+Net ~25 dup lines removed. Verified with `swift build -c release` and
+`--selftest`.
 
 **3.2 `UpdateChecker.repo` and `issuesURL` / `latestVersion` disagree — DONE (2025-07-14)**
 
@@ -250,13 +258,14 @@ Remedy: small helper `private func cmd(_ command: MPRemoteCommand,
 handler: @escaping (RadioPlayer) -> Void)` that does the weak-self capture +
 main bounce + `.success` / `.commandFailed`.
 
-**3.6 `openMapSearch` and `openSettings` do the same thing**
-`AppDelegate.swift:299-305`. Both route to `.stations`. Dead code in all but
-name — the "Search…" menu item just opens settings to the Stations tab,
-identical to "Settings…".
-Remedy: give "Search…" a different `SettingsTab` (e.g. add `.search`) or fold
-the two menu items into one. At minimum remove `openMapSearch` and point the
-menu item's action at `openSettings` until a real distinction exists.
+**3.6 `openMapSearch` and `openSettings` do the same thing — DONE (2025-07-15)**
+
+Both routed to `settingsController.show(tab: .stations)`, so `openMapSearch`
+was a byte-identical duplicate. Applied the minimal remedy: pointed the
+"Search…" menu item's action at `#selector(openSettings)` and deleted
+`openMapSearch`. Behaviour is unchanged (Search still opens the Stations tab);
+a real distinction (e.g. a dedicated `.search` tab) can be added later without
+resurrecting the dead selector. Verified with `swift build -c release`.
 
 **3.7 `PanelStation` and `Station` conversions are duplicated**
 `SettingsModel.swift:71,75-81,487-489,491-494`. `panelStation` / `station` /
@@ -324,9 +333,9 @@ Nothing to remove here. The `.gitignore` correctly excludes `.build` and
 | ~~1.3 reuse one `NSImage` in the animator + drop to 10 Hz~~ | done | biggest steady-state CPU win |
 | ~~2.1 / 2.4 release `cachedPlaces` + window controller on close~~ | done | ~1.8 MB reclaimed after Settings use |
 | 1.6 grid-bucket places for `updateVisiblePlaces` | 1 h | smooth map on slow Macs |
-| 3.1 one `HTTP` helper | 15 min | removes 25 dup lines |
+| ~~3.1 one `HTTP` helper~~ | done | removed ~25 dup lines |
 | 1.1 stat-based menu reload | 20 min | removes per-open decode |
-| 3.6 unify `openMapSearch` / `openSettings` | 5 min | dead code |
+| ~~3.6 unify `openMapSearch` / `openSettings`~~ | done | dead code removed |
 | ~~1.2 cache style/barCount in animator~~ | done | tiny CPU |
 | 1.7 cache `staticIcon` | 10 min | tiny CPU |
 | 4.3 try `-Osize` | 5 min | likely 10–15 KB off binary |

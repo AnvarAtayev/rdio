@@ -36,8 +36,7 @@ enum RadioGarden {
     static func search(_ query: String) async throws -> SearchResults {
         var components = URLComponents(string: "https://radio.garden/api/search")!
         components.queryItems = [URLQueryItem(name: "q", value: query)]
-        let data = try await get(components.url!)
-        let result = try JSONDecoder().decode(SearchResponse.self, from: data)
+        let result = try await HTTP.decode(SearchResponse.self, from: components.url!)
         var results = SearchResults()
         for hit in result.hits.hits {
             guard let page = hit._source.page else { continue }
@@ -73,8 +72,8 @@ enum RadioGarden {
             return places
         }
 
-        let data = try await get(URL(string: "https://radio.garden/api/ara/content/places")!)
-        let decoded = try JSONDecoder().decode(PlacesResponse.self, from: data)
+        let decoded = try await HTTP.decode(PlacesResponse.self,
+                                            from: URL(string: "https://radio.garden/api/ara/content/places")!)
         let places = decoded.data.list.compactMap { raw -> Place? in
             guard raw.geo.count == 2 else { return nil }
             return Place(id: raw.id, title: raw.title, country: raw.country,
@@ -90,8 +89,8 @@ enum RadioGarden {
 
     /// Stations broadcasting from a given place.
     static func channels(inPlace placeID: String) async throws -> [Channel] {
-        let data = try await get(URL(string: "https://radio.garden/api/ara/content/page/\(placeID)/channels")!)
-        let decoded = try JSONDecoder().decode(ChannelsResponse.self, from: data)
+        let decoded = try await HTTP.decode(ChannelsResponse.self,
+                                            from: URL(string: "https://radio.garden/api/ara/content/page/\(placeID)/channels")!)
         let placeTitle = decoded.data.title
         return decoded.data.content.flatMap(\.items).compactMap { item in
             guard let page = item.page, page.type == "channel",
@@ -101,14 +100,6 @@ enum RadioGarden {
     }
 
     // MARK: - Plumbing
-
-    private static func get(_ url: URL) async throws -> Data {
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
-        return data
-    }
 
     private struct SearchResponse: Decodable {
         let hits: Hits

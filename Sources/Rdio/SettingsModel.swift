@@ -100,10 +100,12 @@ enum UpdateChecker {
         let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        if http.statusCode == 404 { return nil }
-        guard http.statusCode == 200 else { throw URLError(.badServerResponse) }
+        let data: Data
+        do {
+            data = try await HTTP.get(request)
+        } catch let error as HTTP.StatusError where error.code == 404 {
+            return nil  // repo has no releases yet
+        }
         struct Release: Decodable { let tag_name: String }
         let tag = try JSONDecoder().decode(Release.self, from: data).tag_name
         return tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
