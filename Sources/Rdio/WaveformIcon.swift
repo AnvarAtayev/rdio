@@ -130,23 +130,7 @@ final class WaveformIconAnimator {
         var targets = [Float](repeating: 0, count: barCount)
 
         if isLive, !bands.isEmpty {
-            let overall = bands.reduce(0, +) / Float(bands.count)
-            switch style {
-            case .spectrum, .off:
-                for i in 0..<barCount {
-                    targets[i] = bands[min(bands.count - 1, i * bands.count / barCount)]
-                }
-            case .ripple:
-                history.removeFirst()
-                history.append(overall)
-                targets = history
-            case .pulse:
-                let center = Float(barCount - 1) / 2
-                for i in 0..<barCount {
-                    let weight = 1 - 0.45 * abs(Float(i) - center) / max(center, 1)
-                    targets[i] = overall * weight
-                }
-            }
+            targets = Self.targets(for: style, barCount: barCount, bands: bands, history: &history)
         } else {
             phase += Self.interval
             for i in 0..<barCount {
@@ -172,9 +156,27 @@ final class WaveformIconAnimator {
     /// its pixels are repainted.
     private func render(bars: [Float]) -> NSImage {
         let count = bars.count
-        let width = CGFloat(count) * Self.barWidth + CGFloat(max(count - 1, 0)) * Self.gap
+        let width = Self.frameWidth(barCount: count)
         let rep = self.rep(for: count, pixelWidth: Int(ceil(width * 2)),
                            pixelHeight: Int(ceil(Self.canvasHeight * 2)))
+        Self.draw(bars: bars, into: rep, color: .black)
+
+        let image = NSImage(size: NSSize(width: width, height: Self.canvasHeight))
+        image.addRepresentation(rep)
+        image.isTemplate = true
+        return image
+    }
+
+    /// Logical width of the icon canvas for a given bar count.
+    static func frameWidth(barCount: Int) -> CGFloat {
+        CGFloat(barCount) * barWidth + CGFloat(max(barCount - 1, 0)) * gap
+    }
+
+    /// Paints the bars as centered pills into `rep` at 2× the logical size.
+    /// Shared by the live animator (black, for a template menu-bar icon) and
+    /// the docs exporter (a light tint, for the mock-up menu bar).
+    static func draw(bars: [Float], into rep: NSBitmapImageRep, color: NSColor) {
+        let width = frameWidth(barCount: bars.count)
 
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
@@ -188,23 +190,62 @@ final class WaveformIconAnimator {
         // Erase the previous frame: in a bitmap rep, filling with clear composites
         // nothing over existing pixels, so bars would accumulate. `clear()` zeros
         // the area so each tick starts from a transparent canvas.
-        ctx.clear(CGRect(x: 0, y: 0, width: width, height: Self.canvasHeight))
+        ctx.clear(CGRect(x: 0, y: 0, width: width, height: canvasHeight))
 
-        NSColor.black.setFill()
+        color.setFill()
         for (i, value) in bars.enumerated() {
-            let height = Self.minHeight + CGFloat(value) * (Self.canvasHeight - Self.minHeight)
-            let frame = NSRect(x: CGFloat(i) * (Self.barWidth + Self.gap),
-                               y: (Self.canvasHeight - height) / 2,
-                               width: Self.barWidth, height: height)
+            let height = minHeight + CGFloat(value) * (canvasHeight - minHeight)
+            let frame = NSRect(x: CGFloat(i) * (barWidth + gap),
+                               y: (canvasHeight - height) / 2,
+                               width: barWidth, height: height)
             NSBezierPath(roundedRect: frame,
-                         xRadius: Self.barWidth / 2,
-                         yRadius: Self.barWidth / 2).fill()
+                         xRadius: barWidth / 2,
+                         yRadius: barWidth / 2).fill()
         }
+    }
 
-        let image = NSImage(size: NSSize(width: width, height: Self.canvasHeight))
+    /// A standalone icon image with its own backing store, no shared cache.
+    /// The docs exporter renders many independent frames, so the tick-time
+    /// rep reuse (which assumes one live button) doesn't apply.
+    static func iconImage(bars: [Float], color: NSColor) -> NSImage {
+        let width = frameWidth(barCount: bars.count)
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
+                                    pixelsWide: Int(ceil(width * 2)),
+                                    pixelsHigh: Int(ceil(canvasHeight * 2)),
+                                    bitsPerSample: 8, samplesPerPixel: 4,
+                                    hasAlpha: true, isPlanar: false,
+                                    colorSpaceName: .deviceRGB,
+                                    bytesPerRow: 0, bitsPerPixel: 0)!
+        draw(bars: bars, into: rep, color: color)
+        let image = NSImage(size: NSSize(width: width, height: canvasHeight))
         image.addRepresentation(rep)
-        image.isTemplate = true
         return image
+    }
+
+    /// Maps a spectrum reading to per-bar target heights for the given style.
+    /// `history` carries the ripple style's traveling-wave buffer between frames.
+    /// Shared by the live animator (`tick`) and the docs exporter.
+    static func targets(for style: IconStyle, barCount: Int,
+                        bands: [Float], history: inout [Float]) -> [Float] {
+        let overall = bands.reduce(0, +) / Float(bands.count)
+        var targets = [Float](repeating: 0, count: barCount)
+        switch style {
+        case .spectrum, .off:
+            for i in 0..<barCount {
+                targets[i] = bands[min(bands.count - 1, i * bands.count / barCount)]
+            }
+        case .ripple:
+            history.removeFirst()
+            history.append(overall)
+            targets = history
+        case .pulse:
+            let center = Float(barCount - 1) / 2
+            for i in 0..<barCount {
+                let weight = 1 - 0.45 * abs(Float(i) - center) / max(center, 1)
+                targets[i] = overall * weight
+            }
+        }
+        return targets
     }
 
     /// Returns the cached `NSBitmapImageRep` for the current bar count,
