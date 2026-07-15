@@ -204,24 +204,6 @@ final class WaveformIconAnimator {
         }
     }
 
-    /// A standalone icon image with its own backing store, no shared cache.
-    /// The docs exporter renders many independent frames, so the tick-time
-    /// rep reuse (which assumes one live button) doesn't apply.
-    static func iconImage(bars: [Float], color: NSColor) -> NSImage {
-        let width = frameWidth(barCount: bars.count)
-        let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
-                                    pixelsWide: Int(ceil(width * 2)),
-                                    pixelsHigh: Int(ceil(canvasHeight * 2)),
-                                    bitsPerSample: 8, samplesPerPixel: 4,
-                                    hasAlpha: true, isPlanar: false,
-                                    colorSpaceName: .deviceRGB,
-                                    bytesPerRow: 0, bitsPerPixel: 0)!
-        draw(bars: bars, into: rep, color: color)
-        let image = NSImage(size: NSSize(width: width, height: canvasHeight))
-        image.addRepresentation(rep)
-        return image
-    }
-
     /// Maps a spectrum reading to per-bar target heights for the given style.
     /// `history` carries the ripple style's traveling-wave buffer between frames.
     /// Shared by the live animator (`tick`) and the docs exporter.
