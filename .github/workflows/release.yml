@@ -16,16 +16,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build
-        run: swift build -c release
-
-      - name: Package
+      - name: Build & package
+        id: package
         run: |
-          mkdir rdio
-          cp .build/release/rdio rdio/
-          tar -czf rdio-macos-arm64.tar.gz rdio
+          VERSION="${GITHUB_REF_NAME#v}"
+          {
+            echo "### Artifacts"
+            echo ""
+            echo "| File | SHA-256 |"
+            echo "| --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for arch in arm64 x86_64; do
+            make app ARCH="$arch" VERSION="$VERSION"
+            zip="Rdio-${VERSION}-${arch}.zip"
+            ditto -c -k --keepParent Rdio.app "$zip"
+            sha=$(shasum -a 256 "$zip" | awk '{print $1}')
+            echo "${arch}_zip=$zip" >> "$GITHUB_OUTPUT"
+            echo "${arch}_sha=$sha" >> "$GITHUB_OUTPUT"
+            echo "| \`$zip\` | \`$sha\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: rdio-macos-arm64.tar.gz
+          files: |
+            ${{ steps.package.outputs.arm64_zip }}
+            ${{ steps.package.outputs.x86_64_zip }}
+          generate_release_notes: true
+          body: |
+            ### Downloads
+
+            **Apple Silicon (arm64):** `${{ steps.package.outputs.arm64_zip }}`
+            SHA-256: `${{ steps.package.outputs.arm64_sha }}`
+
+            **Intel (x86_64):** `${{ steps.package.outputs.x86_64_zip }}`
+            SHA-256: `${{ steps.package.outputs.x86_64_sha }}`

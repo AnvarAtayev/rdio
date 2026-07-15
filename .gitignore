@@ -1,3 +1,5 @@
 .build/
 Rdio.app/
 .DS_Store
+Rdio-*.zip
+*.tar.gz
