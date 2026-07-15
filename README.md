@@ -38,6 +38,19 @@ Move `Rdio.app` to `/Applications` to keep it around. You'll need Xcode or the C
 
 ## App features
 
+### In the menu bar
+
+Rdio lives up in the menu bar. While a station plays, the bars dance to the audio and the track can scroll alongside them (this can also be toggled off if desired):
+
+<p align="center">
+  <img src="docs/img/menubar-playing.gif" width="430" alt="Rdio playing in the macOS menu bar">
+</p>
+
+Pick the idle icon and the playing animation in **Settings → Design**:
+<p align="center">
+  <img src="docs/img/menubar-icons.png" width="470" alt="Rdio menu bar icons - six idle icons and the spectrum, ripple, and pulse playing styles">
+</p>
+
 ### The menu
 
 Everything lives behind the menu bar icon: play/pause, skip, shuffle, and
@@ -54,15 +67,15 @@ Media keys and Control Center work too.
 **Settings/Stations.** Search the Radio Garden map of ~12,000 broadcasting cities, browse the most popular stations, or hit shuffle to land somewhere random in the world. Keep the ones you like.
 
 <p align="center">
-  <img src="docs/img/settings-stations.png" width="720" alt="Settings — Stations tab">
+  <img src="docs/img/settings-stations.png" width="720" alt="Settings - Stations tab">
 </p>
 
 ### Make it yours
 
-**Settings/Design.** Choose the idle icon, and how the bars move while a station plays — spectrum, ripple, pulse, or nothing at all.
+**Settings/Design.** Choose the idle icon, and how the bars move while a station plays - spectrum, ripple, pulse, or nothing at all.
 
 <p align="center">
-  <img src="docs/img/settings-design.png" width="720" alt="Settings — Design tab">
+  <img src="docs/img/settings-design.png" width="720" alt="Settings - Design tab">
 </p>
 
 
