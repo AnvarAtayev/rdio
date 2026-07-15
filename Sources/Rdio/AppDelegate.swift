@@ -4,6 +4,9 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let player = RadioPlayer()
     private var stations: [Station] = []
+    /// mtime of stations.json as of the last load; lets menuNeedsUpdate skip
+    /// the disk read + decode when the file hasn't changed.
+    private var stationsFileDate: Date?
 
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
@@ -51,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         stations = Stations.load()
+        stationsFileDate = Stations.modificationDate
         installEditMenu()
 
         UserDefaults.standard.register(defaults: [
@@ -260,8 +264,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Picks up manual edits to stations.json every time the menu opens.
+    /// Picks up manual edits to stations.json when the menu opens. Gated on the
+    /// file's mtime so an unchanged file costs a stat instead of a read + decode.
     func menuNeedsUpdate(_ menu: NSMenu) {
+        let date = Stations.modificationDate
+        if let date, date == stationsFileDate { return }
+        stationsFileDate = date
         let fresh = Stations.load()
         if fresh != stations {
             stations = fresh

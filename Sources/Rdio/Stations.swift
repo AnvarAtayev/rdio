@@ -24,6 +24,12 @@ enum Stations {
             .appendingPathComponent("Rdio/stations.json")
     }
 
+    /// Last-modified time of the stations file, or nil if it doesn't exist.
+    /// Used to skip re-reading + decoding when the file is unchanged.
+    static var modificationDate: Date? {
+        (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.modificationDate] as? Date
+    }
+
     /// Loads the station list, seeding the file with defaults on first run.
     /// A missing or unparseable file falls back to the defaults.
     static func load() -> [Station] {

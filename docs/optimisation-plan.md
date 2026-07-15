@@ -42,14 +42,28 @@ Investigation notes:
 
 ### 1. Speed / CPU
 
-**1.1 `AppDelegate.menuNeedsUpdate` reloads stations from disk on every menu open**
-`AppDelegate.swift:248`. `Stations.load()` re-reads and JSON-decodes
-`stations.json` from disk every time the menu opens, then compares full arrays
-with `!=`. For a few dozen stations this is fine, but it's synchronous I/O on
-the main thread during a menu-open animation.
-Remedy: stat the file's mtime; only re-read + decode when it has changed. Cache
-the last mtime alongside `stations`. Avoids the `Equatable` walk over the whole
-list on every open.
+**1.1 `AppDelegate.menuNeedsUpdate` reloads stations from disk on every menu
+open — DONE (2025-07-15)**
+
+`Stations.load()` re-read and JSON-decoded `stations.json` on every menu open,
+then compared full arrays with `!=` — synchronous main-thread I/O + decode +
+`Equatable` walk during the menu-open animation, even though the file is
+unchanged on almost every open.
+
+Fix: added `Stations.modificationDate` (stats the file's mtime, nil if absent)
+and an `AppDelegate.stationsFileDate` cache seeded right after the initial
+`Stations.load()`. `menuNeedsUpdate` now early-returns when the mtime matches
+the cached one, so an unchanged file costs a single `stat` instead of a read +
+decode + array compare. When the mtime changes (Settings' `Stations.save`, or a
+manual edit) it reloads, re-caches the date, and keeps the existing `!=` guard
+so a byte-identical rewrite still doesn't rebuild the menu. The "picks up manual
+edits when the menu opens" contract is unchanged. Verified with
+`swift build -c release` and `--selftest`.
+
+Note on magnitude: for the shipped case (≤ a few dozen stations, warm SSD) the
+avoided work is sub-millisecond against a 16.6 ms frame budget — imperceptible.
+The value is removing main-thread blocking I/O from a hot path so it stays flat
+at hundreds of saved stations / cold cache, not a felt speedup today.
 
 **1.2 `IconStyle.current` / `IconStyle.barCount` re-read `UserDefaults` on
 every animator tick — DONE (2025-07-14)**
@@ -334,7 +348,7 @@ Nothing to remove here. The `.gitignore` correctly excludes `.build` and
 | ~~2.1 / 2.4 release `cachedPlaces` + window controller on close~~ | done | ~1.8 MB reclaimed after Settings use |
 | 1.6 grid-bucket places for `updateVisiblePlaces` | 1 h | smooth map on slow Macs |
 | ~~3.1 one `HTTP` helper~~ | done | removed ~25 dup lines |
-| 1.1 stat-based menu reload | 20 min | removes per-open decode |
+| ~~1.1 stat-based menu reload~~ | done | removes per-open decode |
 | ~~3.6 unify `openMapSearch` / `openSettings`~~ | done | dead code removed |
 | ~~1.2 cache style/barCount in animator~~ | done | tiny CPU |
 | 1.7 cache `staticIcon` | 10 min | tiny CPU |
