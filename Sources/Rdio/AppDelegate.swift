@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private let settingsModel = SettingsModel()
+    private let updater = AppUpdater()
     private lazy var settingsController: SettingsWindowController = {
         settingsModel.playHandler = { [weak self] station in
             self?.player.play(station)
@@ -66,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             AppAppearance.key: AppAppearance.system.rawValue,
         ])
         AppAppearance.current.apply()
+        settingsModel.updater = updater
         player.setSpectrumBarCount(IconStyle.barCount)
         player.onNextStation = { [weak self] in self?.playAdjacent(1) }
         player.onPreviousStation = { [weak self] in self?.playAdjacent(-1) }

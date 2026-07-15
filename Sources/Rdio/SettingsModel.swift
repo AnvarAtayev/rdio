@@ -234,7 +234,17 @@ final class SettingsModel: ObservableObject {
     // MARK: About
 
     @Published var autoUpdateCheck: Bool {
-        didSet { UserDefaults.standard.set(autoUpdateCheck, forKey: UpdateChecker.autoCheckKey) }
+        didSet {
+            UserDefaults.standard.set(autoUpdateCheck, forKey: UpdateChecker.autoCheckKey)
+            if updater?.kind == .sparkle { updater?.automaticallyChecks = autoUpdateCheck }
+        }
+    }
+    /// Set once at launch by `AppDelegate`. Routes update actions to Sparkle for
+    /// direct installs, or to brew/GitHub messaging otherwise.
+    var updater: AppUpdater? {
+        didSet {
+            if updater?.kind == .sparkle { autoUpdateCheck = updater!.automaticallyChecks }
+        }
     }
     @Published var launchAtLogin: Bool {
         didSet { applyLaunchAtLogin() }
@@ -348,13 +358,28 @@ final class SettingsModel: ObservableObject {
     // MARK: - About
 
     func checkForUpdates() async {
+        switch updater?.kind {
+        case .sparkle:
+            updater?.checkForUpdates()  // Sparkle presents its own download + install UI
+        case .homebrew:
+            await reportLatestVersion(hint: "Run \u{201C}brew upgrade --cask rdio\u{201D} to update.")
+        default:
+            await reportLatestVersion(hint: nil)  // dev build, or updater not yet wired
+        }
+    }
+
+    /// Reports the newest published tag as inline text. Used for the Homebrew and
+    /// dev paths, where the app can't install the update itself.
+    private func reportLatestVersion(hint: String?) async {
         updateStatus = "Checking…"
         do {
             if let latest = try await UpdateChecker.latestVersion() {
-                updateStatus =
-                    latest == UpdateChecker.currentVersion
-                    ? "You're up to date (\(UpdateChecker.currentVersion))."
-                    : "Version \(latest) is available on GitHub."
+                if latest == UpdateChecker.currentVersion {
+                    updateStatus = "You're up to date (\(UpdateChecker.currentVersion))."
+                } else {
+                    updateStatus = "Version \(latest) is available."
+                        + (hint.map { " " + $0 } ?? "")
+                }
             } else {
                 updateStatus = "No releases published yet."
             }

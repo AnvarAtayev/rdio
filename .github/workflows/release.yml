@@ -15,39 +15,65 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Build & package
+      - name: Build & package (universal)
         id: package
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          make app VERSION="$VERSION"
+          zip="Rdio-${VERSION}.zip"
+          ditto -c -k --keepParent Rdio.app "$zip"
+          sha=$(shasum -a 256 "$zip" | awk '{print $1}')
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           {
-            echo "### Artifacts"
+            echo "### Artifact"
             echo ""
             echo "| File | SHA-256 |"
             echo "| --- | --- |"
+            echo "| \`$zip\` | \`$sha\` |"
           } >> "$GITHUB_STEP_SUMMARY"
-          for arch in arm64 x86_64; do
-            make app ARCH="$arch" VERSION="$VERSION"
-            zip="Rdio-${VERSION}-${arch}.zip"
-            ditto -c -k --keepParent Rdio.app "$zip"
-            sha=$(shasum -a 256 "$zip" | awk '{print $1}')
-            echo "${arch}_zip=$zip" >> "$GITHUB_OUTPUT"
-            echo "${arch}_sha=$sha" >> "$GITHUB_OUTPUT"
-            echo "| \`$zip\` | \`$sha\` |" >> "$GITHUB_STEP_SUMMARY"
-          done
 
-      - name: Create Release
+      - name: Sign update and build appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          ZIP="${{ steps.package.outputs.zip }}"
+          # sign_update ships inside the Sparkle SwiftPM artifact fetched by the build.
+          SIGN="$(find .build/artifacts -name sign_update -path '*Sparkle*' | head -1)"
+          # Feed the EdDSA private key on stdin (`-s` is deprecated for new keys).
+          SIG="$(echo "$SPARKLE_PRIVATE_KEY" | "$SIGN" --ed-key-file - -p "$ZIP")"
+          LEN="$(stat -f%z "$ZIP")"
+          REPO="$GITHUB_REPOSITORY" TAG="$GITHUB_REF_NAME" \
+          VERSION="${{ steps.package.outputs.version }}" \
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${ZIP}" \
+          SIG="$SIG" LEN="$LEN" \
+            bash packaging/make-appcast.sh > appcast.xml
+
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            ${{ steps.package.outputs.arm64_zip }}
-            ${{ steps.package.outputs.x86_64_zip }}
+          files: ${{ steps.package.outputs.zip }}
           generate_release_notes: true
           body: |
-            ### Downloads
+            ### Download
 
-            **Apple Silicon (arm64):** `${{ steps.package.outputs.arm64_zip }}`
-            SHA-256: `${{ steps.package.outputs.arm64_sha }}`
+            **Universal (Apple Silicon + Intel):** `${{ steps.package.outputs.zip }}`
+            SHA-256: `${{ steps.package.outputs.sha }}`
 
-            **Intel (x86_64):** `${{ steps.package.outputs.x86_64_zip }}`
-            SHA-256: `${{ steps.package.outputs.x86_64_sha }}`
+      - name: Publish appcast to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git switch main
+          git add appcast.xml
+          if git diff --cached --quiet; then
+            echo "appcast unchanged"
+          else
+            git commit -m "Update appcast for ${GITHUB_REF_NAME}"
+            git push origin main
+          fi

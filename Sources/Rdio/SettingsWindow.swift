@@ -419,7 +419,9 @@ struct AboutPage: View {
             .formStyle(.grouped)
         }
         .task {
-            if model.autoUpdateCheck, model.updateStatus.isEmpty {
+            // Sparkle runs its own scheduled checks; only the brew/dev paths
+            // need this inline check when the About page opens.
+            if model.updater?.kind != .sparkle, model.autoUpdateCheck, model.updateStatus.isEmpty {
                 await model.checkForUpdates()
             }
         }

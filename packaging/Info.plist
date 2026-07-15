@@ -21,6 +21,14 @@
 	<string>0.0.0</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<!-- Sparkle auto-update. SUPublicEDKey must hold the public key printed by
+	     Sparkle's `generate_keys`; the matching private key signs each release. -->
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/AnvarAtayev/rdio/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>HIAstchumWOy5V28v3Ch55bZqdT1es+dhLqA6Tb1ayM=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHighResolutionCapable</key>
