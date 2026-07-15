@@ -41,11 +41,25 @@ jobs:
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
+          set -euo pipefail
           ZIP="${{ steps.package.outputs.zip }}"
           # sign_update ships inside the Sparkle SwiftPM artifact fetched by the build.
           SIGN="$(find .build/artifacts -name sign_update -path '*Sparkle*' | head -1)"
-          # Feed the EdDSA private key on stdin (`-s` is deprecated for new keys).
-          SIG="$(echo "$SPARKLE_PRIVATE_KEY" | "$SIGN" --ed-key-file - -p "$ZIP")"
+          if [ ! -x "$SIGN" ]; then echo "::error::sign_update not found under .build/artifacts"; exit 1; fi
+          # Write the key to a file with no trailing newline (`-s` is deprecated;
+          # `echo` would append a byte that sign_update rejects). Never printed.
+          KEYF="$RUNNER_TEMP/sparkle_ed_key"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | tr -d '\r\n' > "$KEYF"
+          # Byte count only (44 for a valid key) — reveals no key material.
+          echo "key length: $(wc -c < "$KEYF" | tr -d ' ') bytes (expect 44)"
+          # Suppress the tool's stderr so a key it was handed can never reach the log.
+          if ! SIG="$("$SIGN" --ed-key-file "$KEYF" -p "$ZIP" 2>/dev/null)"; then
+            rm -f "$KEYF"
+            echo "::error::sign_update failed — verify SPARKLE_PRIVATE_KEY holds the private key from 'generate_keys -x' (expected 44 bytes above)"
+            exit 1
+          fi
+          rm -f "$KEYF"
+          echo "signature length: ${#SIG} chars"
           LEN="$(stat -f%z "$ZIP")"
           REPO="$GITHUB_REPOSITORY" TAG="$GITHUB_REF_NAME" \
           VERSION="${{ steps.package.outputs.version }}" \
