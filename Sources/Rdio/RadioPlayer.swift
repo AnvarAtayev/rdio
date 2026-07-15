@@ -23,8 +23,12 @@ final class RadioPlayer: NSObject, AVPlayerItemMetadataOutputPushDelegate {
     private(set) var currentStation: Station?
     private(set) var trackTitle: String?
 
+    /// Distinguishes a playback-state change (play/pause/stop) from a mere
+    /// track-title update, so listeners can take a cheaper path for the latter.
+    enum Change { case state, metadata }
+
     /// Called on the main thread whenever state or track title changes.
-    var onChange: (() -> Void)?
+    var onChange: ((Change) -> Void)?
 
     /// Wired by the app to step through the saved station list; also invoked
     /// by the system's next/previous media keys.
@@ -151,8 +155,12 @@ final class RadioPlayer: NSObject, AVPlayerItemMetadataOutputPushDelegate {
     }
 
     private func stateDidChange() {
+        notifyChange(.state)
+    }
+
+    private func notifyChange(_ kind: Change) {
         updateNowPlayingInfo()
-        onChange?()
+        onChange?(kind)
     }
 
     // MARK: - Track metadata (ICY stream titles)
@@ -170,7 +178,7 @@ final class RadioPlayer: NSObject, AVPlayerItemMetadataOutputPushDelegate {
             guard let title = try? await item.load(.stringValue), !title.isEmpty,
                   output === self.metadataOutput else { return }
             self.trackTitle = title
-            self.stateDidChange()
+            self.notifyChange(.metadata)
         }
     }
 

@@ -116,6 +116,11 @@ metadata tick.
 Remedy: only the previously-checked and newly-checked items need their `state`
 flipped — keep an `indexOfCurrent` var and update two items instead of n.
 
+_Partial (2025-07-15)._ The metadata-tick case is gone — 3.4's `.metadata`
+fast-path returns before the `stationItems` walk, so a track title no longer
+triggers it. The O(n) walk still runs on genuine state changes (play/pause/stop);
+the `indexOfCurrent` two-item update remains open for that path.
+
 **1.6 `SettingsModel.updateVisiblePlaces` filters all 12k places on every
 camera change**
 `SettingsModel.swift:384-399`. The filter does a full scan plus a `.sorted`
@@ -165,6 +170,18 @@ Remedy: split into two or three `ObservableObject`s — e.g. `MapModel`
 (editable stations), `AppearanceModel` (icon / style / about). SwiftUI already
 handles multiple `@ObservedObject` in one view. Biggest win for settings-window
 redraw cost.
+
+_Partial — 80/20 step applied (2025-07-15)._ The full split is 1–2 h with real
+regression risk (cross-model reads like `isNowPlayingFavorite`), so before
+paying for it we took the cheap win that removes most of the churn: the
+now-playing push is change-gated (`SettingsModel.updateNowPlaying(isPlaying:
+station:track:)` assigns only fields that actually differ, since `@Published`
+fires `objectWillChange` on every set — even same-value), and metadata now
+takes a cheap path (see 3.4). This kills the redundant same-value invalidations;
+a *genuine* track change still invalidates the whole model (only the split
+fixes that). Next: profile with Instruments' SwiftUI "View Body" counts (map
+open, typing in search — `searchText` is the real high-frequency `@Published`)
+and only do the full split if `StationsPage.body` re-eval still dominates.
 
 **2.3 `WaveformIconAnimator.history` is built but `displayed` keeps its own copy too**
 `WaveformIcon.swift:59-60`. Minor, but for `ripple` mode `history` is appended
@@ -255,13 +272,18 @@ back to `.spectrum` via `?? .spectrum`.
 Remedy: pick one mechanism.
 
 **3.4 `player.onChange` fires on every track-title update, but most of
-`refreshUI` only cares about state changes**
-`RadioPlayer.swift:153-156`, `AppDelegate.swift:176-232`. Track title changes
-drive `refreshUI`'s title-line and tooltip, but the whole body runs (including
-`stationItems` walk + `transportView.update` + icon-animation re-decision).
-Remedy: split `onChange` into `onStateChanged` and `onMetadata`, or pass a hint
-payload. `refreshUI` then does the cheap path for metadata, the full path for
-state.
+`refreshUI` only cared about state changes — DONE (2025-07-15)**
+
+`RadioPlayer.onChange` now carries a `RadioPlayer.Change` hint (`.state` vs
+`.metadata`); `stateDidChange` routes through `notifyChange(.state)` and the ICY
+metadata path through `notifyChange(.metadata)`. `refreshUI(_:)` takes the hint:
+the shared, cheap part (info line, tooltip, menu-bar caption — extracted into
+`updateNowPlayingText()`, plus the gated now-playing push) always runs, then it
+early-returns on `.metadata`, skipping `transportView.update`, the `stationItems`
+checkmark walk and `updateIconAnimation` — none of which a title change affects.
+`.state` (default) still does the full pass. Verified with `swift build -c
+release` and `--selftest`. Related: this also resolves the "O(n) `stationItems`
+walk per metadata tick" half of 1.5 (the walk no longer runs on metadata).
 
 **3.5 `MPRemoteCommandCenter` targets hop to main via `DispatchQueue.main.async`**
 `RadioPlayer.swift:183,188,193,198,203,208`. `setUpRemoteCommandCenter` already

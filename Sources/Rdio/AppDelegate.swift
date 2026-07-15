@@ -86,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
 
-        player.onChange = { [weak self] in self?.refreshUI() }
+        player.onChange = { [weak self] kind in self?.refreshUI(kind) }
         rebuildMenu()
 
         // Debug harness: open settings automatically so memory/CPU can be
@@ -200,9 +200,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return clipped + "…"
     }
 
-    private func refreshUI() {
+    private func refreshUI(_ kind: RadioPlayer.Change = .state) {
         guard infoItem != nil else { return }
 
+        // Always cheap: the info line, tooltip and menu-bar text follow the
+        // track title, which changes far more often than playback state.
+        updateNowPlayingText()
+        settingsModel.updateNowPlaying(isPlaying: player.isPlaying,
+                                       station: player.currentStation,
+                                       track: player.trackTitle)
+
+        // A track-title update leaves transport, the checkmarks and the icon
+        // animation untouched, so skip that whole pass on metadata ticks.
+        guard kind == .state else { return }
+
+        transportView.update(isPlaying: player.isPlaying,
+                             canPlay: player.currentStation != nil || !stations.isEmpty,
+                             canSkip: !stations.isEmpty)
+
+        for item in stationItems {
+            guard let station = item.representedObject as? Station else { continue }
+            let isOnAir = station == player.currentStation && player.isPlaying
+            item.image = isOnAir ? MenuMetrics.icon("checkmark") : MenuMetrics.iconGutter
+        }
+
+        updateIconAnimation()
+    }
+
+    /// The info line, tooltip and (optional) menu-bar caption — everything that
+    /// tracks the current title. Shared by the full and metadata-only refreshes.
+    private func updateNowPlayingText() {
         // One line, always present, so the menu never changes height: what's on
         // air, or why it isn't. Never hidden — hiding it would drop a row and
         // resize the menu out from under the pointer.
@@ -216,16 +243,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             infoItem.title = fitted(track?.isEmpty == false ? track! : station.name)
         case .stopped:
             infoItem.title = "Not playing"
-        }
-
-        transportView.update(isPlaying: player.isPlaying,
-                             canPlay: player.currentStation != nil || !stations.isEmpty,
-                             canSkip: !stations.isEmpty)
-
-        for item in stationItems {
-            guard let station = item.representedObject as? Station else { continue }
-            let isOnAir = station == player.currentStation && player.isPlaying
-            item.image = isOnAir ? MenuMetrics.icon("checkmark") : MenuMetrics.iconGutter
         }
 
         if case .playing(let station) = player.state {
@@ -244,11 +261,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             statusItem.button?.title = ""
             statusItem.button?.imagePosition = .imageOnly
         }
-
-        updateIconAnimation()
-        settingsModel.isPlaying = player.isPlaying
-        settingsModel.nowPlayingStation = player.currentStation
-        settingsModel.nowPlayingTrack = player.trackTitle
     }
 
     private func updateIconAnimation() {

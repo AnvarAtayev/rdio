@@ -266,6 +266,17 @@ final class SettingsModel: ObservableObject {
     /// can reflect live state. Pushed from `AppDelegate.refreshUI`.
     @Published var isPlaying = false
 
+    /// Pushes the live now-playing state, assigning only the fields that
+    /// actually changed. `@Published` fires `objectWillChange` on every set even
+    /// when the value is identical, so gating here stops a redundant push (e.g.
+    /// `isPlaying = true` again on a track-title update) from re-evaluating every
+    /// view observing this model.
+    func updateNowPlaying(isPlaying: Bool, station: Station?, track: String?) {
+        if self.isPlaying != isPlaying { self.isPlaying = isPlaying }
+        if nowPlayingStation != station { nowPlayingStation = station }
+        if nowPlayingTrack != track { nowPlayingTrack = track }
+    }
+
     private var saveTask: Task<Void, Never>?
 
     init() {
