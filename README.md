@@ -90,3 +90,8 @@ Your stations live in `~/Library/Application Support/Rdio/stations.json`, seeded
 ```
 
 Anything AVFoundation can play works as a `url`, including Radio Garden channels (`https://radio.garden/api/ara/content/listen/<id>/channel.mp3`).
+
+
+## License
+
+Rdio is released under the [MIT License](LICENSE).
