@@ -108,7 +108,21 @@ jobs:
           fi
 
       - name: Publish appcast to main
+        env:
+          # main requires pull requests, and the checkout's GITHUB_TOKEN can't
+          # push through that. A deploy key is the only bypass actor narrow
+          # enough to exempt this step without also exempting every human with
+          # write access — GitHub Actions itself can only be a bypass actor on
+          # org-owned repos.
+          APPCAST_DEPLOY_KEY: ${{ secrets.APPCAST_DEPLOY_KEY }}
         run: |
+          set -euo pipefail
+          KEY="$RUNNER_TEMP/appcast_key"
+          trap 'rm -f "$KEY"' EXIT
+          printf '%s\n' "$APPCAST_DEPLOY_KEY" > "$KEY"
+          chmod 600 "$KEY"
+          export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
