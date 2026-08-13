@@ -78,6 +78,35 @@ jobs:
             **Universal (Apple Silicon + Intel):** `${{ steps.package.outputs.zip }}`
             SHA-256: `${{ steps.package.outputs.sha }}`
 
+      - name: Update Homebrew cask
+        env:
+          # GITHUB_TOKEN is scoped to this repo only, so pushing to the tap needs
+          # a fine-grained PAT with Contents: read/write on homebrew-tap. It has
+          # an expiry date; when it lapses this step fails loudly rather than
+          # letting the cask drift behind the release again.
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.package.outputs.version }}
+          SHA: ${{ steps.package.outputs.sha }}
+        run: |
+          set -euo pipefail
+          TAP="$RUNNER_TEMP/tap"
+          git clone --depth 1 \
+            "https://x-access-token:${TAP_TOKEN}@github.com/${GITHUB_REPOSITORY_OWNER}/homebrew-tap.git" "$TAP"
+          CASK="$TAP/Casks/rdio.rb"
+          sed -i '' -E "s|^( *version )\".*\"|\1\"${VERSION}\"|; s|^( *sha256 )\".*\"|\1\"${SHA}\"|" "$CASK"
+          if ! grep -q "version \"${VERSION}\"" "$CASK" || ! grep -q "sha256 \"${SHA}\"" "$CASK"; then
+            echo "::error::cask rewrite did not apply — check the version/sha256 lines in Casks/rdio.rb"
+            exit 1
+          fi
+          git -C "$TAP" config user.name "github-actions[bot]"
+          git -C "$TAP" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git -C "$TAP" diff --quiet; then
+            echo "cask unchanged"
+          else
+            git -C "$TAP" commit -am "rdio ${VERSION}"
+            git -C "$TAP" push
+          fi
+
       - name: Publish appcast to main
         run: |
           git config user.name "github-actions[bot]"
