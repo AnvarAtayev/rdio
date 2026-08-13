@@ -31,27 +31,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return icon
     }
 
-    private let settingsModel = SettingsModel()
+    /// Lazy because the actions need `self`. Nothing is deferred that matters:
+    /// the model is built on its first use in `applicationDidFinishLaunching`,
+    /// and because the actions are init arguments there is no way to get hold of
+    /// a model that isn't wired to the player.
+    private lazy var settingsModel = SettingsModel(
+        actions: SettingsModel.Actions(
+            play: { [weak self] station in
+                self?.player.play(station)
+            },
+            togglePlayPause: { [weak self] in
+                self?.togglePlayPause()
+            },
+            nextStation: { [weak self] in
+                self?.playAdjacent(1)
+            },
+            iconSettingsChanged: { [weak self] in
+                guard let self else { return }
+                let barCount = IconStyle.barCount
+                self.player.setSpectrumBarCount(barCount)
+                self.animator.updateSettings()
+                self.refreshUI()
+            }))
     private let updater = AppUpdater()
-    private lazy var settingsController: SettingsWindowController = {
-        settingsModel.playHandler = { [weak self] station in
-            self?.player.play(station)
-        }
-        settingsModel.onIconSettingsChanged = { [weak self] in
-            guard let self else { return }
-            let barCount = IconStyle.barCount
-            self.player.setSpectrumBarCount(barCount)
-            self.animator.updateSettings()
-            self.refreshUI()
-        }
-        settingsModel.togglePlayPauseHandler = { [weak self] in
-            self?.togglePlayPause()
-        }
-        settingsModel.nextStationHandler = { [weak self] in
-            self?.playAdjacent(1)
-        }
-        return SettingsWindowController(model: settingsModel)
-    }()
+    private lazy var settingsController = SettingsWindowController(model: settingsModel)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         stations = Stations.load()

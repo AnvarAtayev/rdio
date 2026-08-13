@@ -173,25 +173,25 @@ final class SettingsModel: ObservableObject {
     @Published var iconStyle: IconStyle {
         didSet {
             UserDefaults.standard.set(iconStyle.rawValue, forKey: IconStyle.styleKey)
-            DispatchQueue.main.async { self.onIconSettingsChanged?() }
+            DispatchQueue.main.async { self.actions.iconSettingsChanged() }
         }
     }
     @Published var barCount: Int {
         didSet {
             UserDefaults.standard.set(barCount, forKey: IconStyle.barCountKey)
-            DispatchQueue.main.async { self.onIconSettingsChanged?() }
+            DispatchQueue.main.async { self.actions.iconSettingsChanged() }
         }
     }
     @Published var idleIcon: String {
         didSet {
             UserDefaults.standard.set(idleIcon, forKey: IdleIcon.key)
-            DispatchQueue.main.async { self.onIconSettingsChanged?() }
+            DispatchQueue.main.async { self.actions.iconSettingsChanged() }
         }
     }
     @Published var showNowPlayingText: Bool {
         didSet {
             UserDefaults.standard.set(showNowPlayingText, forKey: IconStyle.nowPlayingTextKey)
-            DispatchQueue.main.async { self.onIconSettingsChanged?() }
+            DispatchQueue.main.async { self.actions.iconSettingsChanged() }
         }
     }
 
@@ -266,12 +266,21 @@ final class SettingsModel: ObservableObject {
     @Published var focusCounter = 0
     private(set) var focusRegion: MKCoordinateRegion?
 
-    var playHandler: ((Station) -> Void)?
-    var onIconSettingsChanged: (() -> Void)?
-    /// Toggle playback from the settings window's sidebar toolbar.
-    var togglePlayPauseHandler: (() -> Void)?
-    /// Skip to the next station from the now-playing bar.
-    var nextStationHandler: (() -> Void)?
+    /// What the model needs from the app to act on a user's choice. Supplied at
+    /// init and non-optional on purpose: these used to be assignable properties
+    /// wired up alongside the settings window, so anything reaching the model by
+    /// another route — the menu bar's shuffle button — found them nil and did
+    /// nothing at all, silently.
+    struct Actions {
+        let play: (Station) -> Void
+        /// Toggle playback from the settings window's sidebar toolbar.
+        let togglePlayPause: () -> Void
+        /// Skip to the next station from the now-playing bar.
+        let nextStation: () -> Void
+        let iconSettingsChanged: () -> Void
+    }
+
+    let actions: Actions
     /// Mirrors `RadioPlayer.isPlaying` so the sidebar's play/pause button
     /// can reflect live state. Pushed from `AppDelegate.refreshUI`.
     @Published var isPlaying = false
@@ -289,7 +298,8 @@ final class SettingsModel: ObservableObject {
 
     private var saveTask: Task<Void, Never>?
 
-    init() {
+    init(actions: Actions) {
+        self.actions = actions
         let defaults = UserDefaults.standard
         iconStyle =
             IconStyle(rawValue: defaults.string(forKey: IconStyle.styleKey) ?? "") ?? .spectrum
@@ -329,7 +339,7 @@ final class SettingsModel: ObservableObject {
 
     func playRow(_ station: EditableStation) {
         guard let url = station.url else { return }
-        playHandler?(Station(name: station.name, url: url))
+        actions.play(Station(name: station.name, url: url))
     }
 
     func scheduleSave() {
@@ -499,7 +509,7 @@ final class SettingsModel: ObservableObject {
             do {
                 let channels = try await RadioGarden.channels(inPlace: place.id)
                 if let picked = channels.randomElement() {
-                    playHandler?(picked.station)
+                    actions.play(picked.station)
                     return
                 }
             } catch {
@@ -532,7 +542,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func play(_ station: PanelStation) {
-        playHandler?(station.station)
+        actions.play(station.station)
     }
 
     func isFavorite(_ station: PanelStation) -> Bool {

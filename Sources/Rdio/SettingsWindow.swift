@@ -112,10 +112,10 @@ private struct NowPlayingBar: View {
                 model.toggleFavoriteNowPlaying()
             }
             HoverButton(symbol: model.isPlaying ? "pause.fill" : "play.fill", help: "Play/Pause") {
-                model.togglePlayPauseHandler?()
+                model.actions.togglePlayPause()
             }
             HoverButton(symbol: "forward.fill", help: "Next station") {
-                model.nextStationHandler?()
+                model.actions.nextStation()
             }
         }
         .padding(.horizontal, 12)
