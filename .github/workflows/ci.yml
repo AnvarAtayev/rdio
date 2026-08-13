@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build app bundle
+        # Mirrors what `release.yml` does at tag time — universal build, Sparkle
+        # embedded, ad-hoc signed — so packaging breaks show up on the PR rather
+        # than halfway through a release. VERSION falls back to 0.0.0 here since
+        # a shallow checkout has no tags to describe.
+        #
+        # `make selftest` is deliberately not run: it streams every station over
+        # the network with a 15s timeout each, which is too slow and too flaky
+        # to gate merges on.
+        run: make app
