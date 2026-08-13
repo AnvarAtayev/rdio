@@ -5,13 +5,13 @@
     <link>https://raw.githubusercontent.com/AnvarAtayev/rdio/main/appcast.xml</link>
     <description>Rdio update feed</description>
     <item>
-      <title>Version 0.1.4</title>
-      <link>https://github.com/AnvarAtayev/rdio/releases/tag/v0.1.4</link>
-      <sparkle:version>0.1.4</sparkle:version>
-      <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
+      <title>Version 0.1.5</title>
+      <link>https://github.com/AnvarAtayev/rdio/releases/tag/v0.1.5</link>
+      <sparkle:version>0.1.5</sparkle:version>
+      <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <pubDate>Wed, 15 Jul 2026 22:45:10 +0000</pubDate>
-      <enclosure url="https://github.com/AnvarAtayev/rdio/releases/download/v0.1.4/Rdio-0.1.4.zip" type="application/octet-stream" sparkle:edSignature="zJPpVqRlTlVxBjJ6OBb8cnCfW4pnZRxqxkVDttkbQStsIVcGWSn99AFKBr4WQGaiciTiKTBwM84A0+onbA0uCA==" length="1779396" />
+      <pubDate>Thu, 13 Aug 2026 12:39:27 +0000</pubDate>
+      <enclosure url="https://github.com/AnvarAtayev/rdio/releases/download/v0.1.5/Rdio-0.1.5.zip" type="application/octet-stream" sparkle:edSignature="aGMlPrafitZHUrvOHQPCNjFXfen4/ngl1JIWzxIiaXMwE4nqUZZisFVREJFZYlObbviCnn0lEx5Zc44sXKTXDg==" length="1779793" />
     </item>
   </channel>
 </rss>
