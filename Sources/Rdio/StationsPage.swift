@@ -31,9 +31,20 @@ private struct EditableCell: View {
 /// One row in the My Stations list. Name and URL are both click-to-edit cells.
 private struct StationRow: View {
     @Binding var station: SettingsModel.EditableStation
+    let isStarred: Bool
+    let starBlocked: Bool
+    let onToggleStar: () -> Void
     let onPlay: () -> Void
     let onRemove: () -> Void
     @State private var rowHovered = false
+
+    private var starHelp: String {
+        if isStarred { return "Remove from the menu bar dropdown" }
+        if starBlocked {
+            return "Only \(Favorites.limit) favourites allowed - please unstar one first"
+        }
+        return "Show in the menu bar dropdown"
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -55,6 +66,12 @@ private struct StationRow: View {
                 HoverButton(symbol: "arrow.uturn.backward", help: "Reset name to “\(original)”") {
                     station.name = original
                 }
+            }
+            HoverButton(
+                symbol: isStarred ? "star.fill" : "star", help: starHelp,
+                disabled: starBlocked || station.url == nil
+            ) {
+                onToggleStar()
             }
             HoverButton(symbol: "play.circle", help: "Play now", disabled: station.url == nil) {
                 onPlay()
@@ -285,6 +302,9 @@ struct StationsPage: View {
                 ForEach($model.stations) { $station in
                     StationRow(
                         station: $station,
+                        isStarred: model.isStarred(station),
+                        starBlocked: !model.isStarred(station) && model.favoriteLimitReached,
+                        onToggleStar: { model.toggleStar(station) },
                         onPlay: { model.playRow(station) },
                         onRemove: { model.remove(station) })
                 }

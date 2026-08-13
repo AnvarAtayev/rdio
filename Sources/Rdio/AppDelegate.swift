@@ -11,7 +11,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
     private var infoItem: NSMenuItem!
+    /// Hidden alongside `infoItem` when idle, so the menu doesn't open on a
+    /// stray line with nothing above it.
+    private var infoSeparator: NSMenuItem!
     private var stationItems: [NSMenuItem] = []
+    /// Where the Recents/Favourites blocks begin, and how many rows they occupy,
+    /// so they can be swapped without disturbing the rows around them.
+    private var stationSectionStart = 0
+    private var stationSectionCount = 0
+    /// Whether the dropdown is on screen. Shuffle can change the station list
+    /// from inside the open menu, which is the one case that needs a live update.
+    private var menuIsOpen = false
     private var transportView: TransportMenuView!
 
     private var animator: WaveformIconAnimator!
@@ -38,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var settingsModel = SettingsModel(
         actions: SettingsModel.Actions(
             play: { [weak self] station in
-                self?.player.play(station)
+                self?.play(station)
             },
             togglePlayPause: { [weak self] in
                 self?.togglePlayPause()
@@ -137,7 +147,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.minimumWidth = MenuMetrics.width
 
         infoItem = addInfoItem("")
-        menu.addItem(.separator())
+        infoSeparator = .separator()
+        menu.addItem(infoSeparator)
 
         let transportItem = NSMenuItem()
         transportItem.view = transportView
@@ -145,17 +156,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        stationItems = stations.map { station in
-            let item = NSMenuItem(
-                title: fitted(station.name), action: #selector(stationClicked(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = station
-            item.image = MenuMetrics.iconGutter
-            return item
-        }
-        stationItems.forEach { menu.addItem($0) }
-
-        menu.addItem(.separator())
+        // Everything above is fixed, so the station rows always start here and
+        // can be swapped out on their own later.
+        stationSectionStart = menu.numberOfItems
+        stationSectionCount = 0
+        refreshStationSections()
 
         let search = NSMenuItem(
             title: "Search...", action: #selector(openSettings), keyEquivalent: "")
@@ -178,6 +183,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(quit)
 
         refreshUI()
+    }
+
+    /// Replaces the Recents and Favourites blocks in place, leaving every other
+    /// row untouched.
+    ///
+    /// In place rather than by rebuilding the whole menu, because this also runs
+    /// while the dropdown is on screen: the transport row is a custom view, so
+    /// pressing shuffle doesn't dismiss the menu, and the recents list it changes
+    /// is sitting right there. Rebuilding wholesale would tear down and replace
+    /// the very row the pointer is resting on. Both blocks live below transport,
+    /// so a change in their height pushes rows down rather than out from under
+    /// the cursor.
+    ///
+    /// Either block is dropped along with its heading and separator when empty,
+    /// so a fresh install shows transport and nothing else rather than a
+    /// labelled gap. `sectionHeader(title:)` is AppKit's own heading style rather
+    /// than a disabled row dressed up as one.
+    private func refreshStationSections() {
+        for _ in 0..<stationSectionCount {
+            menu.removeItem(at: stationSectionStart)
+        }
+
+        stationItems = []
+        var index = stationSectionStart
+        let sections = [
+            ("Recents", Recents.stations),
+            ("Favourites", stations.filter { Favorites.contains($0.url) }),
+        ]
+        for (title, section) in sections where !section.isEmpty {
+            menu.insertItem(.sectionHeader(title: title), at: index)
+            index += 1
+            for station in section {
+                let item = NSMenuItem(
+                    title: fitted(station.name), action: #selector(stationClicked(_:)),
+                    keyEquivalent: "")
+                item.target = self
+                item.representedObject = station
+                item.image = MenuMetrics.iconGutter
+                menu.insertItem(item, at: index)
+                index += 1
+                stationItems.append(item)
+            }
+            menu.insertItem(.separator(), at: index)
+            index += 1
+        }
+        stationSectionCount = index - stationSectionStart
     }
 
     private func addInfoItem(_ title: String) -> NSMenuItem {
@@ -221,11 +272,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         transportView.update(isPlaying: player.isPlaying,
                              canPlay: player.currentStation != nil || !stations.isEmpty,
-                             canSkip: !stations.isEmpty)
+                             canSkip: skipList.count > 1)
 
         for item in stationItems {
             guard let station = item.representedObject as? Station else { continue }
-            let isOnAir = station == player.currentStation && player.isPlaying
+            // Matched on URL, not on the whole station: a recent keeps the name
+            // it had when it played, so a rename in My Stations would otherwise
+            // stop the two comparing equal and drop the tick.
+            let isOnAir = station.url == player.currentStation?.url && player.isPlaying
             item.image = isOnAir ? MenuMetrics.icon("checkmark") : MenuMetrics.iconGutter
         }
 
@@ -235,9 +289,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The info line, tooltip and (optional) menu-bar caption — everything that
     /// tracks the current title. Shared by the full and metadata-only refreshes.
     private func updateNowPlayingText() {
-        // One line, always present, so the menu never changes height: what's on
-        // air, or why it isn't. Never hidden — hiding it would drop a row and
-        // resize the menu out from under the pointer.
+        // What's on air, or why it isn't. Idle needs no line to announce itself —
+        // the transport row already shows a play button rather than a pause one —
+        // so the row and its separator are hidden rather than left saying
+        // "Not playing". A stream that *failed* still gets its say.
         switch player.state {
         case .connecting(let station):
             infoItem.title = fitted("Connecting to \(station.name)…")
@@ -247,8 +302,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let track = player.trackTitle
             infoItem.title = fitted(track?.isEmpty == false ? track! : station.name)
         case .stopped:
-            infoItem.title = "Not playing"
+            infoItem.title = ""
         }
+        // Hidden, not omitted: `infoItem` stays valid for the next state change,
+        // and `refreshUI` keeps using it to tell a built menu from an unbuilt one.
+        let idle = player.state == .stopped
+        infoItem.isHidden = idle
+        infoSeparator.isHidden = idle
 
         if case .playing(let station) = player.state {
             statusItem.button?.toolTip = [station.name, player.trackTitle].compactMap { $0 }
@@ -281,29 +341,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Picks up manual edits to stations.json when the menu opens. Gated on the
-    /// file's mtime so an unchanged file costs a stat instead of a read + decode.
+    /// Rebuilds the dropdown each time it opens: recents and stars move without
+    /// stations.json changing. Re-reading the file is still gated on its mtime,
+    /// so an unchanged file costs a stat instead of a read + decode.
     func menuNeedsUpdate(_ menu: NSMenu) {
         let date = Stations.modificationDate
-        if let date, date == stationsFileDate { return }
-        stationsFileDate = date
-        let fresh = Stations.load()
-        if fresh != stations {
-            stations = fresh
-            rebuildMenu()
+        if date != stationsFileDate {
+            stationsFileDate = date
+            stations = Stations.load()
         }
+        rebuildMenu()
     }
+
+    func menuWillOpen(_ menu: NSMenu) { menuIsOpen = true }
+
+    func menuDidClose(_ menu: NSMenu) { menuIsOpen = false }
 
     // MARK: - Actions
 
+    /// Every deliberate pick goes through here so it lands in the recents list.
+    /// `playAdjacent` is the one exception — see `Recents.record`.
+    private func play(_ station: Station) {
+        Recents.record(station)
+        // Shuffle plays from inside the open dropdown, so the list it just
+        // changed is still on screen and has to be redrawn now. Every other
+        // route dismisses the menu first and is picked up on the next open.
+        // Done before playing so the tick that `player.play` triggers lands on
+        // the new rows rather than the ones just discarded.
+        if menuIsOpen { refreshStationSections() }
+        player.play(station)
+    }
+
     @objc private func stationClicked(_ sender: NSMenuItem) {
         guard let station = sender.representedObject as? Station else { return }
-        player.play(station)
+        play(station)
     }
 
     @objc private func togglePlayPause() {
         if player.currentStation == nil, let first = stations.first {
-            player.play(first)
+            play(first)
         } else {
             player.togglePlayPause()
         }
@@ -324,17 +400,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Steps through the saved station list, wrapping at the ends.
+    /// What next/previous walk: the recently played list once there is somewhere
+    /// to go, otherwise My Stations, so the arrows aren't dead on a fresh install
+    /// with nothing played yet.
+    private var skipList: [Station] {
+        let recents = Recents.stations
+        return recents.count > 1 ? recents : stations
+    }
+
+    /// Steps through `skipList`, wrapping at the ends. Plays *without* recording:
+    /// bumping each station to the front of recents as you arrived would reorder
+    /// the list mid-walk, bouncing between two of them instead of moving through.
     private func playAdjacent(_ offset: Int) {
-        guard !stations.isEmpty else { return }
+        let list = skipList
+        guard !list.isEmpty else { return }
         let index: Int
         if let current = player.currentStation,
-           let position = stations.firstIndex(of: current) {
-            index = (position + offset + stations.count) % stations.count
+           let position = list.firstIndex(where: { $0.url == current.url }) {
+            index = (position + offset + list.count) % list.count
         } else {
-            index = offset >= 0 ? 0 : stations.count - 1
+            index = offset >= 0 ? 0 : list.count - 1
         }
-        player.play(stations[index])
+        player.play(list[index])
     }
 
     @objc private func openSettings() {

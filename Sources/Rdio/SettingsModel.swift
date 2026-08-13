@@ -320,6 +320,7 @@ final class SettingsModel: ObservableObject {
                 name: $0.name, urlString: $0.url.absoluteString,
                 location: $0.location, defaultName: $0.defaultName)
         }
+        pruneFavorites()
     }
 
     func addStation() {
@@ -329,6 +330,7 @@ final class SettingsModel: ObservableObject {
 
     func remove(_ station: EditableStation) {
         stations.removeAll { $0.id == station.id }
+        pruneFavorites()
         scheduleSave()
     }
 
@@ -363,6 +365,31 @@ final class SettingsModel: ObservableObject {
                 defaultName: row.defaultName)
         }
         Stations.save(valid)
+    }
+
+    // MARK: - Favourites (the starred few shown in the menu bar dropdown)
+
+    /// Mirrors `Favorites` so the stars redraw when one is toggled: UserDefaults
+    /// is not observable, and SwiftUI needs something published to react to.
+    @Published private(set) var favoriteURLs: [String] = Favorites.urls
+
+    var favoriteLimitReached: Bool { favoriteURLs.count >= Favorites.limit }
+
+    func isStarred(_ station: EditableStation) -> Bool {
+        favoriteURLs.contains(station.urlString)
+    }
+
+    func toggleStar(_ station: EditableStation) {
+        guard let url = station.url else { return }
+        Favorites.toggle(url)
+        favoriteURLs = Favorites.urls
+    }
+
+    /// Keeps stars from outliving their stations and holding a slot with nothing
+    /// left on screen to unstar.
+    private func pruneFavorites() {
+        Favorites.prune(keeping: stations.map(\.urlString))
+        favoriteURLs = Favorites.urls
     }
 
     // MARK: - About
